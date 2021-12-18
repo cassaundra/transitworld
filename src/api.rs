@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{de::DeserializeOwned, Deserialize};
 
-use crate::Spec;
+use crate::data::Spec;
 
 const TRANSITLAND_BASE_URL: &'static str = "https://transit.land/api/v2/rest";
 
@@ -12,10 +12,13 @@ struct Meta {
     next: String,
 }
 
+/// Trait for query-able Transitland types.
 pub trait TransitlandObject: DeserializeOwned {
+    /// The REST noun endpoint associated with this type (e.g. "routes").
     fn rest_noun() -> &'static str;
 }
 
+/// A Transitland API request.
 pub struct Request {
     spec: Spec,
     after: Option<u64>,
@@ -68,6 +71,7 @@ impl Request {
     }
 }
 
+/// A response from a Transitland API request.
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse<T: TransitlandObject> {
     meta: Option<Meta>,
@@ -84,10 +88,12 @@ impl<T: TransitlandObject> SearchResponse<T> {
 
 pub type Result<T> = std::result::Result<T, reqwest::Error>;
 
+/// Top-level convenience wrapper for [`Request::search`].
 pub async fn search<T: TransitlandObject>(api_key: &str, query: &str) -> Result<SearchResponse<T>> {
     Request::new().search(api_key, query).await
 }
 
+/// Top-level convenience wrapper for [`Request::get_by_key`].
 pub async fn get_by_key<T: TransitlandObject>(api_key: &str, key: &str) -> Result<Option<T>> {
     Request::new().get_by_key(api_key, key).await
 }
