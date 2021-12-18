@@ -1,0 +1,27 @@
+on: [push]
+
+name: CI
+
+jobs:
+  build_and_test:
+    name: Rust stable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - run: cargo build --release --all-features
+      - run: cargo test --release --all-features
+      # Source:
+      # https://github.com/actions/cache/blob/main/examples.md#rust---cargo
+      - name: Cache Rust/Cargo build
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}

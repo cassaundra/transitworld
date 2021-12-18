@@ -1,3 +1,5 @@
+![CI status](https://github.com/cassaundra/transitworld/actions/workflows/ci.yml/badge.svg)
+
 ## transitworld
 
 Rust client to the Transitland API.
