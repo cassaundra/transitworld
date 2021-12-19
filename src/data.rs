@@ -2,11 +2,12 @@
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
 macro_rules! impl_object {
     ($type:path, $name:expr) => {
-        impl crate::TransitlandObject for $type {
+        impl crate::api::TransitlandObject for $type {
             fn rest_noun() -> &'static str {
                 $name
             }
@@ -16,12 +17,14 @@ macro_rules! impl_object {
 
 /// Types of feed data (GTFS, GTFS-RT, GBFS, or MDS).
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Spec {
     /// General Transit Feed Specification (GTFS). Its specification is
     /// available [online](https://gtfs.org/reference/static/).
     GTFS,
     /// GTFS Realtime. Its specification is available
     /// [online](https://gtfs.org/reference/realtime/v2).
+    #[serde(rename = "gtfs-rt")]
     GTFSRealtime,
     /// General Bikeshare Feed Specification (GBFS). Its specification is
     /// available [online](https://github.com/NABSA/gbfs/blob/v2.2/gbfs.md).
@@ -38,7 +41,7 @@ pub enum Spec {
 /// information, related feeds, details on how to make authorized requests, and
 /// feed version archives.
 ///
-/// View its online documentaiton
+/// View its online documentation
 /// [here](https://www.transit.land/documentation/rest-api/feeds).
 #[derive(Debug, Deserialize)]
 pub struct Feed {
@@ -49,7 +52,7 @@ pub struct Feed {
     /// A common name for this feed.
     pub name: Option<String>,
     /// Type of data contained in this feed: GTFS, GTFS-RT, GBFS, or MDS.
-    pub spec: Option<Spec>,
+    pub spec: Spec,
     /// Feeds that share the same [`Feed::feed_namespace_id`] value can be
     /// combined without needing to rewrite entity IDs. (Optionally can be an
     /// operator Onestop ID).
@@ -59,14 +62,41 @@ pub struct Feed {
     pub associated_feeds: Option<Vec<String>>,
     /// Language(s) included in this feed.
     pub languages: Option<Vec<String>>,
-    // TODO urls
+    /// URLs that provide data associated with this feed.
+    pub urls: Urls,
     /// License information for this feed, if present.
-    pub license: Option<License>,
-    // TODO auth
-    // TODO geometry
-    // TODO feed_state
+    pub license: License,
+    /// Details on how to construct an HTTP request to access a protected
+    /// resource.
+    pub authorization: Authorization,
+    /// Geometry in GeoJSON format.
+    pub geometry: Option<Geometry<Vec<Vec<(f64, f64)>>>>,
+    /// Details on the current state of this feed, such as active version, last
+    /// fetch time, etc.
+    pub feed_state: FeedState,
     /// A subset of fields for the feed versions associated with this field.
-    pub feed_versions: Option<Vec<FeedVersion>>,
+    pub feed_versions: Vec<HashMap<String, Value>>,
+}
+
+impl_object!(Feed, "feeds");
+
+/// URls associated with a feed.
+#[derive(Debug, Deserialize)]
+pub struct Urls {
+    /// URL for the static feed that represents today's service.
+    pub static_current: String,
+    /// URLs for static feeds that represent past service no longer in effect.
+    pub static_historic: Vec<String>,
+    /// URLs for static feeds that represent service planned for upcoming dates.
+    /// Typically used to represent calendar/service changes that will take
+    /// effect a few weeks or months in the future.
+    pub static_planned: String,
+    /// URL for GTFS Realtime VehiclePosition messages.
+    pub realtime_vehicle_positions: String,
+    /// URL for GTFS Realtime TripUpdate messages.
+    pub realtime_trip_updates: String,
+    /// URL for GTFS Realtime Alert messages.
+    pub realtime_alerts: String,
 }
 
 // TODO download source GTFS
@@ -75,6 +105,8 @@ pub struct Feed {
 ///
 /// You can view more about the licensing issues associated with Transitland
 /// data [here](https://www.transit.land/documentation/an-open-project/).
+///
+/// See also: [`Feed`]
 #[derive(Debug, Deserialize)]
 pub struct License {
     /// SPDX identifier for a common license.
@@ -99,6 +131,63 @@ pub struct License {
     pub attribution_instructions: Option<String>,
 }
 
+/// Details on how to access a protected resource.
+///
+/// See also: [`Feed`]
+#[derive(Debug, Deserialize)]
+pub struct Authorization {
+    /// Method for inserting authorization secret into request.
+    #[serde(rename = "type")]
+    pub auth_type: Option<AuthorizationType>,
+    /// When type=query_param, this specifies the name of the query parameter.
+    pub param_name: Option<String>,
+    /// Website to visit to sign up for an account.
+    pub info_url: String,
+}
+
+/// Type of authorization for a feed.
+///
+/// See also: [`Authorization`], [`Feed`]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorizationType {
+    #[serde(rename = "")]
+    None,
+    Header,
+    BasicAuth,
+    QueryParam,
+    PathSegment,
+}
+
+/// Geometry in GeoJSON format.
+#[derive(Debug, Deserialize)]
+pub struct Geometry<C> where C: DeserializeOwned {
+    /// GeoJSON geometry type.
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// An array of GeoJSON coordinates.
+    #[serde(bound = "")]
+    pub coordinates: C,
+}
+
+/// Details on the state of a feed.
+///
+/// See also: [`Feed`]
+#[derive(Debug, Deserialize)]
+pub struct FeedState {
+    /// Error produced during the last fetch attempt. Empty string if no error.
+    ///
+    /// Example: `404 error`
+    pub last_fetch_error: Option<String>,
+    /// Time of last attempted fetch.
+    pub last_fetched_at: Option<String>, // TODO datetime
+    /// Time of last successful fetch that returned valid data.
+    pub last_successful_fetch_at: Option<String>, // TODO datetime
+    /// The subset of fields of the active feed version.
+    /// See [`FeedVersion`] documentation for full details.
+    pub feed_version: HashMap<String, FeedVersion>,
+}
+
 /// Representation of a GTFS file published at a particular point in time.
 ///
 /// Feed versions are generally accessed and referenced using the [SHA1
@@ -111,22 +200,53 @@ pub struct License {
 ///
 /// View its online documentation
 /// [here](https://www.transit.land/documentation/rest-api/feed_versions).
+///
+/// See also: [`Feed`]
 #[derive(Debug, Deserialize)]
 pub struct FeedVersion {
     /// Unique integer ID.
     pub id: u64,
     /// SHA1 hash of the zip file.
     pub sha1: Option<String>,
-    // TODO fetched_at
+    /// Time when the file was fetched from the url.
+    pub fetched_at: String, // TODO datetime
     /// URL used to fetch the file.
-    pub url: Option<String>, // TODO URI type?
-    // TODO earliest_calendar_date
-    // TODO latest_calendar_date
-    // TODO geometry
-    // TODO files
-    // TODO feed_version_gtfs_import
+    pub url: Option<String>,
+    /// The earliest date with scheduled service.
+    pub earliest_calendar_date: Option<String>, // TODO date
+    /// The latest date with scheduled service.
+    pub latest_calendar_date: Option<String>, // TODO date
+    /// Metadata for each text file present in the main directory of the zip
+    /// archive.
+    pub files: Option<Vec<FileMetadata>>,
     /// A subset of fields for the feed associated with this feed version.
-    pub feed: Option<Feed>,
+    ///
+    /// See [`Feed`] for documentation of these values.
+    pub feed: HashMap<String, Value>,
+}
+
+impl_object!(FeedVersion, "feed_versions");
+
+/// Metadata of archive files.
+#[derive(Debug, Deserialize)]
+pub struct FileMetadata {
+    /// File name.
+    ///
+    /// Example: `stops.txt`.
+    pub name: String,
+    /// SHA1 of this file.
+    pub sha1: String,
+    /// Header row, as a comma-separated string.
+    /// This value may be filtered and cleaned up from the source file.
+    ///
+    /// Example: `trip_id,stop_id,arrival_time,departure_time,stop_sequence`.
+    pub header: String,
+    /// Number of rows, not including the header.
+    pub rows: u64,
+    /// True if the file appears to be a CSV file.
+    pub csv_like: bool,
+    /// File size, in bytes.
+    pub size: u64,
 }
 
 /// Representative of a GTFS `agencies.txt` entity that was imported from a
@@ -148,7 +268,7 @@ pub struct Agency {
     /// GTFS `agency_name`.
     pub agency_name: Option<String>,
     /// GTFS `agency_url`.
-    pub agency_url: Option<String>,      // TODO URI type?
+    pub agency_url: Option<String>, // TODO URI type?
     /// GTFS `agency_timezone`.
     pub agency_timezone: Option<String>, // TODO timezone type?
     /// GTFS `agency_lang`.
@@ -159,14 +279,29 @@ pub struct Agency {
     pub agency_fare_url: Option<String>, // TODO URI type?
     /// GTFS `agency_email`.
     pub agency_email: Option<String>,
-    // TODO geometry
-    /// Subset of fields for operator, if matched.
-    pub operator: Option<Operator>,
-    // TODO places
-    /// A subste of fields for the source feed version.
-    pub feed_version: Option<FeedVersion>,
-    /// A subset of fields for routes associated with this agency.
-    pub routes: Option<Vec<Route>>,
+    /// Geometry in GeoJSON format.
+    pub geometry: Geometry<Vec<Vec<(f64, f64)>>>,
+    // /// Subset of fields for operator, if matched.
+    // pub operator: Option<Operator>,
+    /// Structured array of places associated with this agency.
+    pub places: Vec<Place>,
+    // /// A subset of fields for the source feed version.
+    // pub feed_version: Option<FeedVersion>,
+    // /// A subset of fields for routes associated with this agency.
+    // pub routes: Option<Vec<Route>>,
+}
+
+impl_object!(Agency, "agencies");
+
+/// Place associated with an agency.
+#[derive(Debug, Deserialize)]
+pub struct Place {
+    /// Best-matched city.
+    pub city_name: Option<String>,
+    /// Best-matched state or province.
+    pub adm1_name: Option<String>,
+    /// Best-matched country.
+    pub adm0_name: Option<String>,
 }
 
 /// A higher-level abstraction over agencies.
@@ -183,7 +318,7 @@ pub struct Operator {
     /// Unique integer ID.
     pub id: u64,
     /// OnestopID for this operator.
-    pub onestop_id: Option<String>,
+    pub onestop_id: String,
     /// Operator name.
     pub name: Option<String>,
     /// Operator short name.
@@ -191,10 +326,12 @@ pub struct Operator {
     /// Operator website.
     pub website: Option<String>,
     /// Operator tags
-    pub tags: HashMap<String, String>,
-    /// Subset of fields for matching agencies.
-    pub agencies: Option<Vec<Agency>>,
+    pub tags: Option<HashMap<String, String>>,
+    // /// Subset of fields for matching agencies.
+    // pub agencies: Option<Vec<Agency>>,
 }
+
+impl_object!(Operator, "operators");
 
 /// Representative of a GTFS `routes.txt` entity.
 ///
@@ -215,7 +352,7 @@ pub struct Route {
     /// Unique integer ID.
     pub id: u64,
     /// OnestopID for this route, if available.
-    pub onestop_id: Option<String>,
+    pub onestop_id: String,
     /// GTFS `route_id`.
     pub route_id: Option<String>,
     /// GTFS `route_type`.
@@ -225,18 +362,21 @@ pub struct Route {
     /// GTFS `route_long_name`.
     pub route_long_name: Option<String>,
     /// GTFS `route_color`.
-    pub route_color: String, // TODO color type?
+    pub route_color: String,
     /// GTFS `route_text_color`.
-    pub route_text_color: String, // TODO color type?
+    pub route_text_color: String,
     /// GTFS `route_sort_order`.
-    pub route_sort_order: String, // TODO color type?
-    /// A subset of fields for this route's agency.
-    pub agency: Option<Agency>,
+    pub route_sort_order: u64,
+    // /// A subset of fields for this route's agency.
+    pub agency: HashMap<String, Value>,
     /// A subset of fields for this route's feed version.
-    pub feed_version: Option<FeedVersion>,
+    pub feed_version: Option<HashMap<String, Value>>,
     /// An array of all stops visited by this route.
+    #[serde(flatten)]
     pub route_stops: Option<Vec<Stop>>,
 }
+
+impl_object!(Route, "routes");
 
 /// Representation of a GTFS `stops.txt` entity.
 ///
@@ -266,7 +406,7 @@ pub struct Stop {
     /// GTFS `stop_desc`.
     pub stop_desc: Option<String>,
     /// GTFS `stop_url`.
-    pub stop_url: Option<String>,      // TODO URI type
+    pub stop_url: Option<String>,
     /// GTFS `stop_timezone`.
     pub stop_timezone: Option<String>, // TODO timezone type?
     /// GTFS `stop_code`.
@@ -277,13 +417,28 @@ pub struct Stop {
     pub wheelchair_boarding: Option<u64>,
     /// GTFS `location_type`.
     pub location_type: Option<u64>,
-    /// A subset of fields for this stop's feed version.
-    pub feed_version: Option<FeedVersion>,
-    // TODO level
+    // /// A subset of fields for this stop's feed version.
+    pub feed_version: HashMap<String, Value>,
+    /// GTFS `level`.
+    pub level: Option<GTFSLevel>,
     // TODO parent
     /// Routes associated with this stop.
-    pub route_stops: Option<Vec<Route>>,
-    // TODO geometry
+    pub route_stops: Vec<HashMap<String, Value>>,
+    /// Geometry in GeoJSON format.
+    pub geometry: Geometry<(f64, f64)>,
+}
+
+impl_object!(Stop, "stops");
+
+/// GTFS level.
+#[derive(Debug, Deserialize)]
+pub struct GTFSLevel {
+    /// GTFS level_id.
+    pub level_id: String,
+    /// GTFS level_name.
+    pub level_name: String,
+    /// GTFS level_index.
+    pub level_index: String,
 }
 
 /// Representation of a GTFS `trips.txt` entity.
@@ -314,19 +469,103 @@ pub struct Trip {
     /// Pattern of stops for this trip; values are unique within the feed
     /// version.
     pub stop_pattern_id: Option<u64>,
-    // TODO stop_times
-    // TODO shape
-    // TODO calendar
-    // TODO frequences
+    /// GTFS `stop_time` entities, with some modifications.
+    pub stop_times: Vec<StopTime>,
+    /// Shape for a trip.
+    pub shape: Shape,
+    /// GTFS `calendar` and `calendar_dates` entities.
+    pub calendar: Calendar,
+    /// GTFS `frequencies` entities.
+    pub frequencies: Vec<Frequency>,
     /// A subset of fields for the route associated with this trip.
-    pub route: Option<Route>,
+    pub route: HashMap<String, Value>,
     /// A subset of fields for the feed version.
-    pub feed_version: Option<FeedVersion>,
+    pub feed_version: HashMap<String, Value>,
 }
 
-impl_object!(Feed, "feeds");
-impl_object!(Agency, "agencies");
-impl_object!(Operator, "operators");
-impl_object!(Route, "routes");
-impl_object!(Stop, "stops");
-impl_object!(Trip, "trips");
+// impl_object!(Trip, "trips");
+// TODO actually a subset of routes, need to support
+
+/// Modified GTFS `stop_time` entities.
+///
+/// See also: [`Trip`]
+#[derive(Debug, Deserialize)]
+pub struct StopTime {
+    /// Arrival time, in seconds since midnight.
+    pub arrival_time: u64,
+    /// Departure time, in seconds since midnight.
+    pub departure_time: u64,
+    /// GTFS `stop_sequence`.
+    pub stop_sequence: u64,
+    /// GTFS `stop_headsign`.
+    pub stop_headsign: String,
+    /// GTFS `pickup_type`.
+    pub pickup_type: u64,
+    /// GTFS `drop_off_type`.
+    pub drop_off_type: u64,
+    /// GTFS `timepoint`.
+    pub timepoint: u64,
+    /// GTFS `shape_dist_traveled`.
+    pub shape_dist_traveled: f64,
+    /// Non-zero if interpolated time values were set during import.
+    pub interpolated: u64, // TODO use boolean
+    // TODO stop subset?
+}
+
+/// Shape for a trip.
+///
+/// See also: [`Trip`]
+#[derive(Debug, Deserialize)]
+pub struct Shape {
+    /// GTFS `shape_id`.
+    pub shape_id: String,
+    /// Whether this shape was generated from point-to-point stop locations.
+    pub generated: bool,
+    // /// The geometry of the shape in GeoJSON format.
+    // pub geometry: Geometry,
+}
+
+/// GTFS `calendar` and `calendar_dates` entities combined.
+///
+/// See also: [`Trip`]
+#[derive(Debug, Deserialize)]
+pub struct Calendar {
+    /// GTFS `service_id`.
+    pub service_id: String,
+    /// GTFS `start_date`.
+    pub start_date: String, // TODO date
+    /// GTFS `end_date`.
+    pub end_date: String,   // TODO date
+    pub added_dates: Vec<String>, // TODO date
+    pub removed_dates: Vec<String>,
+    pub generated: bool,
+    /// GTFS `monday`; service scheduled if 1
+    pub monday: u64,
+    /// GTFS `tuesday`; service scheduled if 1
+    pub tuesday: u64,
+    /// GTFS `wednesday`; service scheduled if 1
+    pub wednesday: u64,
+    /// GTFS `thursday`; service scheduled if 1
+    pub thursday: u64,
+    /// GTFS `friday`; service scheduled if 1
+    pub friday: u64,
+    /// GTFS `saturday`; service scheduled if 1
+    pub saturday: u64,
+    /// GTFS `sunday`; service scheduled if 1
+    pub sunday: u64,
+}
+
+/// A single GTFS `frequencies` entity.
+///
+/// See also: [`Trip`]
+#[derive(Debug, Deserialize)]
+pub struct Frequency {
+    /// When this trip begins repeating, in seconds.
+    pub start_time: u64,
+    /// When this trip stops repeating, in seconds.
+    pub end_time: u64,
+    /// GTFS `headway_secs`.
+    pub headway_secs: u64,
+    /// GTFS `exact_times`.
+    pub exact_times: u64,
+}
