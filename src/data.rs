@@ -2,14 +2,20 @@
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::TransitlandObject;
 
 macro_rules! impl_object {
     ($type:path, $name:expr) => {
-        impl crate::api::TransitlandObject for $type {
-            fn rest_noun() -> &'static str {
-                $name
+        impl crate::api::TransitlandObject<()> for $type {
+            fn query_path(_: ()) -> String {
+                $name.to_owned()
+            }
+
+            fn by_id_path(_: ()) -> String {
+                $name.to_owned()
             }
         }
     };
@@ -161,7 +167,10 @@ pub enum AuthorizationType {
 
 /// Geometry in GeoJSON format.
 #[derive(Debug, Deserialize)]
-pub struct Geometry<C> where C: DeserializeOwned {
+pub struct Geometry<C>
+where
+    C: DeserializeOwned,
+{
     /// GeoJSON geometry type.
     #[serde(rename = "type")]
     pub type_: String,
@@ -470,7 +479,7 @@ pub struct Trip {
     /// version.
     pub stop_pattern_id: Option<u64>,
     /// GTFS `stop_time` entities, with some modifications.
-    pub stop_times: Vec<StopTime>,
+    pub stop_times: Option<Vec<StopTime>>,
     /// Shape for a trip.
     pub shape: Shape,
     /// GTFS `calendar` and `calendar_dates` entities.
@@ -478,9 +487,19 @@ pub struct Trip {
     /// GTFS `frequencies` entities.
     pub frequencies: Vec<Frequency>,
     /// A subset of fields for the route associated with this trip.
-    pub route: HashMap<String, Value>,
+    pub route: Option<HashMap<String, Value>>,
     /// A subset of fields for the feed version.
     pub feed_version: HashMap<String, Value>,
+}
+
+impl TransitlandObject<&str> for Trip {
+    fn query_path(route_key: &str) -> String {
+        format!("routes/{}/trips", route_key)
+    }
+
+    fn by_id_path(route_key: &str) -> String {
+        format!("routes/{}/trips", route_key)
+    }
 }
 
 // impl_object!(Trip, "trips");
@@ -509,7 +528,7 @@ pub struct StopTime {
     pub shape_dist_traveled: f64,
     /// Non-zero if interpolated time values were set during import.
     pub interpolated: u64, // TODO use boolean
-    // TODO stop subset?
+                           // TODO stop subset?
 }
 
 /// Shape for a trip.
@@ -535,10 +554,13 @@ pub struct Calendar {
     /// GTFS `start_date`.
     pub start_date: String, // TODO date
     /// GTFS `end_date`.
-    pub end_date: String,   // TODO date
+    pub end_date: String, // TODO date
+    /// An array of dates where service is added (exception_type=1).
     pub added_dates: Vec<String>, // TODO date
+    /// An array of dates where service is added (exception_type=2).
     pub removed_dates: Vec<String>,
-    pub generated: bool,
+    /// Whether this calendar is generated to represent `calendar_date` entries.
+    pub generated: Option<bool>,
     /// GTFS `monday`; service scheduled if 1
     pub monday: u64,
     /// GTFS `tuesday`; service scheduled if 1

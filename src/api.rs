@@ -13,31 +13,40 @@ struct Meta {
 }
 
 /// Trait for query-able Transitland types.
-pub trait TransitlandObject: DeserializeOwned {
-    /// The REST noun endpoint associated with this type (e.g. "routes").
-    fn rest_noun() -> &'static str;
+pub trait TransitlandObject<P>: DeserializeOwned {
+    fn query_path(parent: P) -> String;
+    fn by_id_path(parent: P) -> String;
 }
 
 /// A Transitland API request.
 pub struct Request {
     spec: Spec,
     after: Option<u64>,
+    base_url: String,
 }
 
 impl Request {
     pub fn new() -> Self {
-        Request { spec: Spec::GTFS, after: None, }
+        Request {
+            spec: Spec::GTFS,
+            after: None,
+            base_url: TRANSITLAND_BASE_URL.to_owned(),
+        }
     }
 
-    pub async fn search<T: TransitlandObject>(
-        self,
-        api_key: &str,
+    pub async fn search_with_parent<P, T: TransitlandObject<P>>(
+        &self,
+        parent: P,
         query: &str,
+        api_key: &str,
     ) -> Result<SearchResponse<T>> {
         let client = reqwest::Client::new();
-
         client
-            .get(format!("{}/{}", TRANSITLAND_BASE_URL, T::rest_noun()))
+            .get(format!(
+                "{}/{}",
+                TRANSITLAND_BASE_URL,
+                T::query_path(parent)
+            ))
             .query(&[("apikey", api_key), ("search", query)])
             .send()
             .await?
@@ -45,17 +54,18 @@ impl Request {
             .await
     }
 
-    pub async fn get_by_key<T: TransitlandObject>(
-        self,
-        api_key: &str,
+    pub async fn get_with_parent<P, T: TransitlandObject<P>>(
+        &self,
+        parent: P,
         key: &str,
+        api_key: &str,
     ) -> Result<Option<T>> {
         let client = reqwest::Client::new();
         client
             .get(format!(
                 "{}/{}/{}",
                 TRANSITLAND_BASE_URL,
-                T::rest_noun(),
+                T::by_id_path(parent),
                 key
             ))
             .query(&[("apikey", api_key)])
@@ -69,18 +79,45 @@ impl Request {
         self.spec = spec;
         self
     }
+
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+}
+
+impl Request {
+    pub async fn search<T: TransitlandObject<()>>(
+        &self,
+        query: &str,
+        api_key: &str,
+    ) -> Result<SearchResponse<T>> {
+        self.search_with_parent((), query, api_key).await
+    }
+
+    pub async fn get<T: TransitlandObject<()>>(
+        &self,
+        key: &str,
+        api_key: &str,
+    ) -> Result<Option<T>> {
+        self.get_with_parent((), key, api_key).await
+    }
 }
 
 /// A response from a Transitland API request.
 #[derive(Debug, Deserialize)]
-pub struct SearchResponse<T: TransitlandObject> {
+pub struct SearchResponse<T: DeserializeOwned> {
     meta: Option<Meta>,
     #[serde(flatten)]
     #[serde(bound = "")] // hack: https://github.com/serde-rs/serde/issues/1296
     rest: HashMap<String, Vec<T>>,
 }
 
-impl<T: TransitlandObject> SearchResponse<T> {
+impl<T: DeserializeOwned> SearchResponse<T> {
+    pub fn values(&self) -> Option<&Vec<T>> {
+        self.rest.values().last()
+    }
+
     pub async fn search_next(&self) -> Result<SearchResponse<T>> {
         unimplemented!()
     }
@@ -89,11 +126,14 @@ impl<T: TransitlandObject> SearchResponse<T> {
 pub type Result<T> = std::result::Result<T, reqwest::Error>;
 
 /// Top-level convenience wrapper for [`Request::search`].
-pub async fn search<T: TransitlandObject>(api_key: &str, query: &str) -> Result<SearchResponse<T>> {
+pub async fn search<T: TransitlandObject<()>>(
+    api_key: &str,
+    query: &str,
+) -> Result<SearchResponse<T>> {
     Request::new().search(api_key, query).await
 }
 
-/// Top-level convenience wrapper for [`Request::get_by_key`].
-pub async fn get_by_key<T: TransitlandObject>(api_key: &str, key: &str) -> Result<Option<T>> {
-    Request::new().get_by_key(api_key, key).await
+/// Top-level convenience wrapper for [`Request::get`].
+pub async fn get<T: TransitlandObject<()>>(api_key: &str, key: &str) -> Result<Option<T>> {
+    Request::new().get(api_key, key).await
 }
