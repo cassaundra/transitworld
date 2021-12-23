@@ -1,3 +1,14 @@
+//! Data types within the Transitland ecosystem.
+//!
+//! The data types able to be queried are:
+//! - [`Feed`]
+//! - [`FeedVersion`]
+//! - [`Agency`]
+//! - [`Operator`]
+//! - [`Route`]
+//! - [`Stop`]
+//! - [`Trip`]
+
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -6,6 +17,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::TransitlandObject;
+
+pub mod partial;
 
 macro_rules! impl_object {
     ($type:path, $name:expr) => {
@@ -81,7 +94,7 @@ pub struct Feed {
     /// fetch time, etc.
     pub feed_state: FeedState,
     /// A subset of fields for the feed versions associated with this field.
-    pub feed_versions: Vec<HashMap<String, Value>>,
+    pub feed_versions: Vec<partial::FeedVersion>,
 }
 
 impl_object!(Feed, "feeds");
@@ -194,7 +207,7 @@ pub struct FeedState {
     pub last_successful_fetch_at: Option<String>, // TODO datetime
     /// The subset of fields of the active feed version.
     /// See [`FeedVersion`] documentation for full details.
-    pub feed_version: HashMap<String, FeedVersion>,
+    pub feed_version: partial::FeedVersion,
 }
 
 /// Representation of a GTFS file published at a particular point in time.
@@ -214,7 +227,7 @@ pub struct FeedState {
 #[derive(Debug, Deserialize)]
 pub struct FeedVersion {
     /// Unique integer ID.
-    pub id: u64,
+    pub id: Option<u64>,
     /// SHA1 hash of the zip file.
     pub sha1: Option<String>,
     /// Time when the file was fetched from the url.
@@ -228,10 +241,12 @@ pub struct FeedVersion {
     /// Metadata for each text file present in the main directory of the zip
     /// archive.
     pub files: Option<Vec<FileMetadata>>,
+    /// Available service levels.
+    pub service_levels: Vec<Calendar>,
     /// A subset of fields for the feed associated with this feed version.
     ///
     /// See [`Feed`] for documentation of these values.
-    pub feed: HashMap<String, Value>,
+    pub feed: partial::Feed,
 }
 
 impl_object!(FeedVersion, "feed_versions");
@@ -289,15 +304,15 @@ pub struct Agency {
     /// GTFS `agency_email`.
     pub agency_email: Option<String>,
     /// Geometry in GeoJSON format.
-    pub geometry: Geometry<Vec<Vec<(f64, f64)>>>,
-    // /// Subset of fields for operator, if matched.
-    // pub operator: Option<Operator>,
+    pub geometry: Option<Geometry<Vec<Vec<(f64, f64)>>>>,
+    /// Subset of fields for operator, if matched.
+    pub operator: Option<partial::Operator>,
     /// Structured array of places associated with this agency.
-    pub places: Vec<Place>,
-    // /// A subset of fields for the source feed version.
-    // pub feed_version: Option<FeedVersion>,
-    // /// A subset of fields for routes associated with this agency.
-    // pub routes: Option<Vec<Route>>,
+    pub places: Option<Vec<Place>>,
+    /// A subset of fields for the source feed version.
+    pub feed_version: Option<partial::FeedVersion>,
+    /// A subset of fields for routes associated with this agency.
+    pub routes: Option<Vec<partial::Route>>,
 }
 
 impl_object!(Agency, "agencies");
@@ -336,8 +351,8 @@ pub struct Operator {
     pub website: Option<String>,
     /// Operator tags
     pub tags: Option<HashMap<String, String>>,
-    // /// Subset of fields for matching agencies.
-    // pub agencies: Option<Vec<Agency>>,
+    /// Subset of fields for matching agencies.
+    pub agencies: Option<Vec<partial::Agency>>,
 }
 
 impl_object!(Operator, "operators");
@@ -376,10 +391,10 @@ pub struct Route {
     pub route_text_color: String,
     /// GTFS `route_sort_order`.
     pub route_sort_order: u64,
-    // /// A subset of fields for this route's agency.
-    pub agency: HashMap<String, Value>,
+    /// A subset of fields for this route's agency.
+    pub agency: partial::Agency,
     /// A subset of fields for this route's feed version.
-    pub feed_version: Option<HashMap<String, Value>>,
+    pub feed_version: Option<partial::FeedVersion>,
     /// An array of all stops visited by this route.
     #[serde(flatten)]
     pub route_stops: Option<Vec<Stop>>,
@@ -487,23 +502,20 @@ pub struct Trip {
     /// GTFS `frequencies` entities.
     pub frequencies: Vec<Frequency>,
     /// A subset of fields for the route associated with this trip.
-    pub route: Option<HashMap<String, Value>>,
+    pub route: Option<partial::Route>,
     /// A subset of fields for the feed version.
-    pub feed_version: HashMap<String, Value>,
+    pub feed_version: partial::FeedVersion,
 }
 
-impl TransitlandObject<&str> for Trip {
-    fn query_path(route_key: &str) -> String {
+impl TransitlandObject<u64> for Trip {
+    fn query_path(route_key: u64) -> String {
         format!("routes/{}/trips", route_key)
     }
 
-    fn by_id_path(route_key: &str) -> String {
+    fn by_id_path(route_key: u64) -> String {
         format!("routes/{}/trips", route_key)
     }
 }
-
-// impl_object!(Trip, "trips");
-// TODO actually a subset of routes, need to support
 
 /// Modified GTFS `stop_time` entities.
 ///
@@ -550,15 +562,15 @@ pub struct Shape {
 #[derive(Debug, Deserialize)]
 pub struct Calendar {
     /// GTFS `service_id`.
-    pub service_id: String,
+    pub service_id: Option<String>,
     /// GTFS `start_date`.
     pub start_date: String, // TODO date
     /// GTFS `end_date`.
     pub end_date: String, // TODO date
     /// An array of dates where service is added (exception_type=1).
-    pub added_dates: Vec<String>, // TODO date
+    pub added_dates: Option<Vec<String>>, // TODO date
     /// An array of dates where service is added (exception_type=2).
-    pub removed_dates: Vec<String>,
+    pub removed_dates: Option<Vec<String>>,
     /// Whether this calendar is generated to represent `calendar_date` entries.
     pub generated: Option<bool>,
     /// GTFS `monday`; service scheduled if 1

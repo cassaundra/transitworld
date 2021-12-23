@@ -22,6 +22,7 @@ pub trait TransitlandObject<P>: DeserializeOwned {
 pub struct Request {
     spec: Spec,
     after: Option<u64>,
+    limit: u64,
     base_url: String,
 }
 
@@ -30,6 +31,7 @@ impl Request {
         Request {
             spec: Spec::GTFS,
             after: None,
+            limit: 20,
             base_url: TRANSITLAND_BASE_URL.to_owned(),
         }
     }
@@ -47,7 +49,7 @@ impl Request {
                 TRANSITLAND_BASE_URL,
                 T::query_path(parent)
             ))
-            .query(&[("apikey", api_key), ("search", query)])
+            .query(&[("apikey", api_key), ("search", query), ("limit", &self.limit.to_string())])
             .send()
             .await?
             .json()
@@ -68,7 +70,7 @@ impl Request {
                 T::by_id_path(parent),
                 key
             ))
-            .query(&[("apikey", api_key)])
+            .query(&[("apikey", api_key), ("limit", &self.limit.to_string())])
             .send()
             .await?
             .json()
@@ -77,6 +79,11 @@ impl Request {
 
     pub fn with_spec(mut self, spec: Spec) -> Self {
         self.spec = spec;
+        self
+    }
+
+    pub fn with_limit(mut self, limit: u64) -> Self {
+        self.limit = limit;
         self
     }
 
