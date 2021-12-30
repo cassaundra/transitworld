@@ -49,7 +49,11 @@ impl Request {
                 TRANSITLAND_BASE_URL,
                 T::query_path(parent)
             ))
-            .query(&[("apikey", api_key), ("search", query), ("limit", &self.limit.to_string())])
+            .query(&[
+                ("apikey", api_key),
+                ("search", query),
+                ("limit", &self.limit.to_string()),
+            ])
             .send()
             .await?
             .json()

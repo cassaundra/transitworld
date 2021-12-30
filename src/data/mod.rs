@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
@@ -202,12 +203,12 @@ pub struct FeedState {
     /// Example: `404 error`
     pub last_fetch_error: Option<String>,
     /// Time of last attempted fetch.
-    pub last_fetched_at: Option<String>, // TODO datetime
+    pub last_fetched_at: Option<NaiveDateTime>,
     /// Time of last successful fetch that returned valid data.
-    pub last_successful_fetch_at: Option<String>, // TODO datetime
+    pub last_successful_fetch_at: Option<NaiveDateTime>,
     /// The subset of fields of the active feed version.
     /// See [`FeedVersion`] documentation for full details.
-    pub feed_version: partial::FeedVersion,
+    pub feed_version: Option<partial::FeedVersion>,
 }
 
 /// Representation of a GTFS file published at a particular point in time.
@@ -231,13 +232,13 @@ pub struct FeedVersion {
     /// SHA1 hash of the zip file.
     pub sha1: Option<String>,
     /// Time when the file was fetched from the url.
-    pub fetched_at: String, // TODO datetime
+    pub fetched_at: NaiveDateTime,
     /// URL used to fetch the file.
     pub url: Option<String>,
     /// The earliest date with scheduled service.
-    pub earliest_calendar_date: Option<String>, // TODO date
+    pub earliest_calendar_date: NaiveDate,
     /// The latest date with scheduled service.
-    pub latest_calendar_date: Option<String>, // TODO date
+    pub latest_calendar_date: NaiveDate,
     /// Metadata for each text file present in the main directory of the zip
     /// archive.
     pub files: Option<Vec<FileMetadata>>,
@@ -292,15 +293,15 @@ pub struct Agency {
     /// GTFS `agency_name`.
     pub agency_name: Option<String>,
     /// GTFS `agency_url`.
-    pub agency_url: Option<String>, // TODO URI type?
+    pub agency_url: Option<String>,
     /// GTFS `agency_timezone`.
-    pub agency_timezone: Option<String>, // TODO timezone type?
+    pub agency_timezone: Option<String>,
     /// GTFS `agency_lang`.
     pub agency_lang: Option<String>,
     /// GTFS `agency_phone`.
     pub agency_phone: Option<String>,
     /// GTFS `agency_fare_url`.
-    pub agency_fare_url: Option<String>, // TODO URI type?
+    pub agency_fare_url: Option<String>,
     /// GTFS `agency_email`.
     pub agency_email: Option<String>,
     /// Geometry in GeoJSON format.
@@ -432,7 +433,7 @@ pub struct Stop {
     /// GTFS `stop_url`.
     pub stop_url: Option<String>,
     /// GTFS `stop_timezone`.
-    pub stop_timezone: Option<String>, // TODO timezone type?
+    pub stop_timezone: Option<String>,
     /// GTFS `stop_code`.
     pub stop_code: Option<String>,
     /// GTFS `zone_id`.
@@ -564,13 +565,13 @@ pub struct Calendar {
     /// GTFS `service_id`.
     pub service_id: Option<String>,
     /// GTFS `start_date`.
-    pub start_date: String, // TODO date
+    pub start_date: NaiveDate,
     /// GTFS `end_date`.
-    pub end_date: String, // TODO date
+    pub end_date: NaiveDate,
     /// An array of dates where service is added (exception_type=1).
-    pub added_dates: Option<Vec<String>>, // TODO date
+    pub added_dates: Option<Vec<NaiveDate>>,
     /// An array of dates where service is added (exception_type=2).
-    pub removed_dates: Option<Vec<String>>,
+    pub removed_dates: Option<Vec<NaiveDate>>,
     /// Whether this calendar is generated to represent `calendar_date` entries.
     pub generated: Option<bool>,
     /// GTFS `monday`; service scheduled if 1
